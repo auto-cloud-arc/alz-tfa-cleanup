@@ -17,18 +17,7 @@ Write-Host "PowerShell timer trigger function ran! TIME: $currentUTCtime"
 # Get the custom roles at the tenant root scope
 $customRoles = Get-AzRoleDefinition -Scope '/' | Where-Object {$_.IsCustom -eq 'True'} | Select-Object -Property Name
 
-$customRoles | Export-Csv -path ./customRoles.csv
+$customRoles | Export-Csv -path ./customRoles.csv -NoTypeInformation -Force
 
-# if ($customRolesJson) {
-# # Associate values to output bindings by calling 'Push-OutputBinding'.
-# Push-OutputBinding -Name res -Value ([HttpResponseContext]@{
-#     StatusCode = [HttpStatusCode]::OK
-# })
-# }
-# else {
-#     Push-OutputBinding -Name res -Value ([HttpResponseContext]@{
-#         StatusCode = [HttpStatusCode]::BadRequest
-#     })
-# }
-
-
+# Copy the custom roles to the storage account output binding
+Out-File -FilePath $outputBlob -InputObject $customRoles -Force
