@@ -15,43 +15,46 @@ if ($Timer.IsPastDue) {
 # Write an information log with the current time.
 Write-Host "PowerShell timer trigger function ran! TIME: $currentUTCtime"
 
+# Example of retrieving an environment variable
 $storageInfo = Get-Item -path env:WEBSITE_CONTENTAZUREFILECONNECTIONSTRING
 
-$fullConnectionString = $storageInfo.Value
-$kvPairs = $fullConnectionString.Split(";")
-
-$kvPairs
-$accountName = "AccountName"
-$accoountNameKeyAndValue = ($kvPairs | Where-Object { $_.Contains($substring) })
-$accountNameValue = $accoountNameKeyAndValue.Split("=")[1]
-$accountNameValue
-
-$accessKey = "AccountKey"
-$accessKeyKeyAndValue = ($kvPairs | Where-Object { $_.Contains($accessKey) })   
-$accessKeyValue = $accessKeyKeyAndValue.Split("=")[1]
-$accessKeyValue
-
-$endpointSuffix = "EndpointSuffix"
-$endpointSuffixKeyAndValue = ($kvPairs | Where-Object { $_.Contains($endpointSuffix) })
-$endpointSuffixValue = $endpointSuffixKeyAndValue.Split("=")[1]
-$endpointSuffixValue
-
-$storageEndpoint = "https://$accountNameValue.$endpointSuffixValue"
-$storageEndpoint
-
-
-
 # Get the custom roles at the tenant root scope
-$customRoles = Get-AzRoleDefinition -Scope '/' | Where-Object {$_.IsCustom -eq 'True'} | Select-Object -Property Name
+$customRolesToRemove = Get-AzRoleDefinition -Scope '/' | Where-Object {($_.IsCustom -eq 'True') -and ($_.Name -match '^Azure Landing Zones')} | Select-Object -Property Name
 
-$outputBlob = "outputBlob-$timeStampSuffix.csv"
+$mgScopes = (Get-AzManagementGroup).id 
+$subScopePrefix = "/subscriptions/"
+$subScopes = (Get-AzSubscription).id
+# One-shot: Append $subScopePrefix to each subscription ID
+$subScopes = $subScopes | ForEach-Object { $subScopePrefix + $_ }
+# Two-shot: Append $mgScopes to $subScopes
+$scopes = $mgScopes + $subScopes
+$resultSet = @()
+$i = 0
+Write-Host "REMOVE CUSTOM ROLES FROM TENANT ROOT AND BELOW: $timeStampSuffix UTC"
+foreach ($scope in $scopes) {
+    # Your code here to process each scope  
+    Write-Host "Processing scope: $scope"
+    foreach ($role in $customRolesToRemove.Name) {
+        $roleAssignments =  Get-AzRoleAssignment | where-object {$_.RoleDefinitionName -match "^Azure Landing Zones"}
+        foreach ($assignment in $roleAssignments) {
+            # Remove-AzRoleAssignment -ObjectId $assignment.ObjectId -RoleDefinitionName $role -Scope $scope -Verbose
+            $i++
+            Write-Host "Index: $i    Performing the what-if operation: Remove role assignment for role: $role from object: $($assignment.ObjectId)"
+            $resultSet += "Index: $i    Performing the what-if operation: Remove role assignment for role: $role from object: $($assignment.ObjectId)"
+        }
+    }
+}
 
-$customRoles | Export-Csv -path ./$outputBlob -NoTypeInformation -Force
+# build results path
+$logPath = '../results'
+$resultFile = "result-$timeStampSuffix.log"
 
-Import-Csv -path ./$outputBlob -Verbose
+if (-not(Test-Path -Path $logPath)) {
+    New-Item -ItemType Directory -Path $logPath -Verbose
+}
 
-$destContext = New-AzStorageContext -StorageAccountName $accountNameValue -StorageAccountKey $accessKeyValue
-$containerName = "operation-logs"
+$resultsPath = Join-Path -Path $logPath -ChildPath $resultFile -Verbose
+Set-Content -Path $resultsPath -Value $resultSet
 
-# Copy the blob
-Start-AzStorageBlobCopy -SrcFile ./$outputBlob -Context $sourceContext -DestContainer $containerName -DestContext $destContext
+Write-Host "Confirm that export works..."
+Get-Content -Path $resultsPath -Verbose
